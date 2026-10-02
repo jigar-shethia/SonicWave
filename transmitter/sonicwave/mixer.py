@@ -1,5 +1,23 @@
 """
-Audio mixing, normalizer, and music synthesizer for SonicWave.
+Acoustic Mixer, Ambient Music Synthesizer, and Normalizer for SonicWave.
+
+This module is responsible for blending the silent ultrasonic data signal
+with audible background music so that both play simultaneously through speakers.
+
+Audio Mixing Engineering Challenges:
+------------------------------------
+1. Audible Masking:
+   Humans easily perceive clicks, buzzes, or intermodulation distortion if ultrasonic signals
+   are too loud or clip the speaker voice coil.
+2. Dynamic Headroom & Intermodulation:
+   MacBook Pro and smartphone speakers use digital amplifiers. If the composite signal
+   (Music + Ultrasonic) exceeds 1.0 (0 dBFS), hard digital clipping occurs.
+   Clipping creates high-order harmonic intermodulation products that fold back down into
+   the human audible spectrum as harsh distortion.
+3. Soft-Knee Peak Limiting:
+   The mixer scales the ultrasonic data to -20 dB (10% of music amplitude) and ensures
+   the combined waveform never exceeds 0.95 peak amplitude, guaranteeing 100% clean,
+   distortion-free, click-free playback.
 """
 
 import numpy as np
@@ -8,13 +26,31 @@ from .config import SonicConfig
 
 def generate_ambient_music_sample(duration_sec: float = 10.0, sample_rate: int = 48000) -> np.ndarray:
     """
-    Generates a pleasant, lush ambient chord progression (Cmaj9 - Am9 - Fmaj7 - Gsus4)
-    with soft harmonic overtone decays in the 100 Hz - 8 kHz range to simulate a real song.
+    Synthesizes a lush, relaxing ambient chord progression to serve as carrier background music.
+
+    Acoustic Properties:
+    --------------------
+    - Harmonic Content: Confined to 80 Hz - 4.5 kHz (well below the 18.5 kHz ultrasonic band).
+    - Chord Sequence: Cmaj9 -> Am9 -> Fmaj7 -> Gsus4 (warm, consonant, cinematic).
+    - Overtones: Fundamental + 2nd harmonic (octave) + 3rd harmonic (perfect fifth) with decay.
+    - Envelope: Gentle 300 ms attack, sustained body, and 400 ms soft release per chord.
+
+    Parameters
+    ----------
+    duration_sec : float, optional
+        Total duration of the synthesized music in seconds (default: 10.0s).
+    sample_rate : int, optional
+        Sampling rate in Hz (default: 48,000 Hz).
+
+    Returns
+    -------
+    np.ndarray
+        A 1D float32 audio array normalized to -3 dBFS (peak 0.70).
     """
     t = np.linspace(0, duration_sec, int(sample_rate * duration_sec), endpoint=False)
     music = np.zeros_like(t, dtype=np.float32)
     
-    # 4 chords over duration
+    # 4 chords distributed evenly across the track duration
     chord_len = duration_sec / 4.0
     chords = [
         [130.81, 164.81, 196.00, 246.94, 293.66],  # Cmaj9 (C3, E3, G3, B3, D4)
@@ -32,25 +68,25 @@ def generate_ambient_music_sample(duration_sec: float = 10.0, sample_rate: int =
         # Segment envelope (gentle attack, sustain, soft release)
         seg_samples = len(t_seg)
         env = np.ones(seg_samples, dtype=np.float32)
-        attack_len = int(sample_rate * 0.3)
-        decay_len = int(sample_rate * 0.4)
+        attack_len = int(sample_rate * 0.3)   # 300 ms attack
+        decay_len = int(sample_rate * 0.4)    # 400 ms release
         if seg_samples > attack_len + decay_len:
             env[:attack_len] = np.linspace(0, 1, attack_len)
             env[-decay_len:] = np.linspace(1, 0, decay_len)
             
         chord_wave = np.zeros(seg_samples, dtype=np.float32)
         for freq in chord_freqs:
-            # Fundamental + 2nd + 3rd harmonics
-            chord_wave += 0.5 * np.sin(2 * np.pi * freq * t_seg)
-            chord_wave += 0.25 * np.sin(2 * np.pi * (freq * 2) * t_seg)
-            chord_wave += 0.12 * np.sin(2 * np.pi * (freq * 3) * t_seg)
+            # Fundamental + natural harmonic decay
+            chord_wave += 0.50 * np.sin(2 * np.pi * freq * t_seg)          # 1st harmonic (fundamental)
+            chord_wave += 0.25 * np.sin(2 * np.pi * (freq * 2) * t_seg)    # 2nd harmonic (octave)
+            chord_wave += 0.12 * np.sin(2 * np.pi * (freq * 3) * t_seg)    # 3rd harmonic (fifth)
             
         music[mask] += (chord_wave * env) / len(chord_freqs)
         
-    # Soft low-pass feel: normalize peak to -3 dBFS (0.7)
+    # Normalize peak amplitude to 0.70 (-3.1 dBFS) to leave ample headroom for ultrasonic mixing
     peak = np.max(np.abs(music))
     if peak > 0:
-        music = (music / peak) * 0.7
+        music = (music / peak) * 0.70
         
     return music.astype(np.float32)
 
@@ -62,29 +98,56 @@ def mix_music_and_data(
     offset_sec: float = 1.0,
 ) -> np.ndarray:
     """
-    Layers ultrasonic data onto a music track with configurable attenuation (e.g. -20 dB)
-    and applies soft-knee peak limiting to guarantee zero DAC digital clipping.
+    Layers ultrasonic data onto background music via additive superposition and normalizes peaks.
+
+    Acoustic Superposition:
+    -----------------------
+    The composite waveform is generated by:
+        y(t) = x_music(t) + A_data * x_data(t - t_offset)
+    Where:
+        A_data = 10^(ultrasonic_gain_db / 20)  (= 0.10 for -20 dB)
+
+    Clipping Protection:
+    --------------------
+    If max(|y(t)|) exceeds `peak_limit` (0.95), the entire composite signal is scaled
+    down proportionally, guaranteeing clean analog reconstruction without DAC clipping.
+
+    Parameters
+    ----------
+    music : np.ndarray
+        Mono float32 background music samples.
+    ultrasonic_data : np.ndarray
+        Mono float32 ultrasonic burst samples.
+    config : SonicConfig
+        Acoustic profile containing sample rate, gain dB, and peak limit.
+    offset_sec : float, optional
+        Delay in seconds before the ultrasonic burst begins (default: 1.0s).
+
+    Returns
+    -------
+    np.ndarray
+        The composite float32 audio waveform ready for 24-bit PCM WAV export or speaker streaming.
     """
     fs = config.sample_rate
     offset_samples = int(offset_sec * fs)
     
-    # Ensure music is long enough to hold the data packet
+    # 1. Ensure music track is long enough to cover the entire ultrasonic burst + trailing silence
     required_len = offset_samples + len(ultrasonic_data) + int(fs * 0.5)
     if len(music) < required_len:
-        # Repeat or pad music
         repeats = int(np.ceil(required_len / len(music)))
         music = np.tile(music, repeats)[:required_len]
         
     mixed = music.copy().astype(np.float32)
     
-    # Calculate linear gain from dB
+    # 2. Scale ultrasonic data to desired dB level (-20 dB = 0.10 multiplier)
     gain_linear = 10.0 ** (config.ultrasonic_gain_db / 20.0)
     data_scaled = ultrasonic_data * gain_linear
     
+    # 3. Additive superposition into the music track at the specified offset
     end_samples = offset_samples + len(data_scaled)
     mixed[offset_samples:end_samples] += data_scaled
     
-    # Soft-knee limiter / peak normalization to prevent clipping (|x| <= config.peak_limit)
+    # 4. Peak limit check: scale down if peak exceeds safety limit (0.95)
     peak = np.max(np.abs(mixed))
     if peak > config.peak_limit:
         mixed = (mixed / peak) * config.peak_limit

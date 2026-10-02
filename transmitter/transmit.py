@@ -20,6 +20,27 @@ import sounddevice as sd
 
 
 def play_soundtrack(file_path: str = "sonicwave_music_hello.wav", loop: bool = False, loop_delay: float = 2.0):
+    """
+    Streams a composite soundtrack WAV file through the physical audio output hardware.
+
+    Features:
+    ---------
+    - Automatic Path Resolution: Checks current working directory and transmitter script directory.
+    - Non-Blocking Playback Buffer: Sends audio to system DAC using PortAudio (`sounddevice.play`).
+    - Real-Time Progress Bar: Visual terminal progress bar updated every 100 ms.
+    - Continuous Loop Mode: Optional looping with a configurable delay between transmissions.
+    - Clean Interrupt Handling: Gracefully stops DAC audio streams on Ctrl+C without audio pop.
+
+    Parameters
+    ----------
+    file_path : str, optional
+        Path to the composite soundtrack WAV file (default: "sonicwave_music_hello.wav").
+    loop : bool, optional
+        If True, repeats the transmission indefinitely until stopped by the user.
+    loop_delay : float, optional
+        Time in seconds to pause between consecutive transmission bursts in loop mode.
+    """
+    # 1. Resolve relative file paths
     if not os.path.isabs(file_path):
         if not os.path.exists(file_path) and os.path.exists(os.path.join(script_dir, file_path)):
             file_path = os.path.join(script_dir, file_path)
@@ -29,8 +50,12 @@ def play_soundtrack(file_path: str = "sonicwave_music_hello.wav", loop: bool = F
         print("    Please run 'python generate_soundtrack.py' first.")
         sys.exit(1)
 
+    # 2. Read audio samples and hardware sample rate from WAV file
     audio_data, sample_rate = sf.read(file_path, dtype='float32')
     duration = len(audio_data) / sample_rate
+    
+    # 3. Query system default audio output device (e.g. MacBook Pro Speakers)
+    dev_name = sd.query_devices(kind='output')['name']
     
     print("=" * 65)
     print("             SONICWAVE AUDIO TRANSMITTER")
@@ -39,16 +64,17 @@ def play_soundtrack(file_path: str = "sonicwave_music_hello.wav", loop: bool = F
     print(f"[*] Sample Rate : {sample_rate} Hz")
     print(f"[*] Duration    : {duration:.2f} seconds")
     print(f"[*] Loop Mode   : {'ON (Repeat every ' + str(loop_delay) + 's)' if loop else 'OFF (Single Shot)'}")
-    print(f"[*] Audio Device: {sd.query_devices(kind='output')['name']}")
+    print(f"[*] Audio Device: {dev_name}")
     print("=" * 65)
     
     iteration = 1
     try:
         while True:
             print(f"\n[▶] [Burst #{iteration}] Transmitting Soundtrack...")
+            # Stream audio buffer to output DAC (non-blocking)
             sd.play(audio_data, sample_rate)
             
-            # Simple progress display
+            # Interactive visual terminal progress bar
             start_time = time.time()
             while time.time() - start_time < duration:
                 elapsed = time.time() - start_time

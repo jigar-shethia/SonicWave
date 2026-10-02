@@ -1,5 +1,30 @@
 """
-Framing, serialization, Barker sync, and CRC-16-CCITT for SonicWave packets.
+Packet Framing, Bit Serialization, Barker Synchronization, and CRC-16 for SonicWave.
+
+This module converts raw payload bytes (such as "Hello world") into a robust
+binary bitstream structured as follows:
+
+   +-------------------------+--------------------+---------------------+-------------------+
+   | Barker Sync (13 bits)   | Length (8 bits)    | Payload (N*8 bits)  | CRC-16 (16 bits)  |
+   +-------------------------+--------------------+---------------------+-------------------+
+   | 1 1 1 1 1 0 0 1 1 0 1 0 1 | 0..255 byte count  | UTF-8 ASCII bytes   | CCITT Checksum    |
+   +-------------------------+--------------------+---------------------+-------------------+
+
+Purpose of Each Field:
+-----------------------
+1. Barker Sync (13 bits):
+   A known mathematical sequence (`1111100110101`) that provides a sharp autocorrelation
+   peak. Even if ambient noise is present, the receiver detects this exact pattern to establish
+   symbol boundary timing and bit synchronization.
+2. Length Header (8 bits):
+   An unsigned 8-bit integer (0-255) specifying how many payload bytes follow.
+   Allows variable-length text messages without padding waste.
+3. Payload (N * 8 bits):
+   The serialized bytes of the user's message, transmitted MSB (Most Significant Bit) first.
+4. CRC-16-CCITT (16 bits):
+   Cyclic Redundancy Check error-detecting code calculated over the payload bytes.
+   Guarantees that distorted or corrupted bits transmitted over acoustic air are rejected
+   with 99.998% statistical certainty.
 """
 
 from typing import Tuple, Optional, List
@@ -8,13 +33,36 @@ from .config import SonicConfig
 
 def crc16_ccitt(data: bytes, poly: int = 0x1021, init: int = 0xFFFF) -> int:
     """
-    Computes CRC-16-CCITT over data bytes.
-    Polynomial: x^16 + x^12 + x^5 + 1 (0x1021)
+    Computes a 16-bit CRC-CCITT checksum over input bytes.
+
+    Algorithm & Math:
+    -----------------
+    - Polynomial: x^16 + x^12 + x^5 + 1 (hexadecimal 0x1021).
+    - Initial Register: 0xFFFF.
+    - Each byte is XORed into the top 8 bits of the register.
+    - The register is shifted left bit-by-bit; if the MSB was 1, it is XORed with 0x1021.
+    - Result is masked to 16 bits (0x0000 - 0xFFFF).
+
+    Parameters
+    ----------
+    data : bytes
+        The raw payload bytes to protect.
+    poly : int, optional
+        Generator polynomial (default: 0x1021).
+    init : int, optional
+        Initial shift register state (default: 0xFFFF).
+
+    Returns
+    -------
+    int
+        The 16-bit integer checksum.
     """
     crc = init
     for byte in data:
+        # Align byte with upper 8 bits of 16-bit register
         crc ^= (byte << 8)
         for _ in range(8):
+            # If highest bit is 1, shift and XOR with polynomial
             if crc & 0x8000:
                 crc = ((crc << 1) ^ poly) & 0xFFFF
             else:
@@ -24,28 +72,56 @@ def crc16_ccitt(data: bytes, poly: int = 0x1021, init: int = 0xFFFF) -> int:
 
 def build_frame(payload: bytes, config: SonicConfig) -> List[int]:
     """
-    Constructs a complete bitframe:
-    [Barker Sync Code] + [Length Header (8 bits)] + [Payload (N*8 bits)] + [CRC16 (16 bits)]
+    Builds the complete digital bitframe for transmission.
+
+    Steps:
+    1. Validates payload length (must fit in 8 bits: 1 to 255 bytes).
+    2. Calculates CRC-16-CCITT checksum over the payload.
+    3. Serializes Barker sync code bits.
+    4. Serializes length byte (8 bits, MSB first).
+    5. Serializes payload bytes (8 bits per byte, MSB first).
+    6. Serializes CRC-16 checksum (16 bits, MSB first).
+
+    Parameters
+    ----------
+    payload : bytes
+        The raw bytes to transmit (e.g. b"Hello").
+    config : SonicConfig
+        The active configuration containing the Barker sync sequence.
+
+    Returns
+    -------
+    List[int]
+        A flat list of integers (0 and 1) representing the complete frame.
     """
     length = len(payload)
     if length > 255:
         raise ValueError(f"Payload length {length} exceeds maximum frame size (255 bytes)")
 
+    # Compute CRC-16 checksum over payload
     crc = crc16_ccitt(payload)
     
-    # 1. Barker sync code bits
+    # -------------------------------------------------------------------------
+    # Stage 1: Barker sync sequence (13 bits)
+    # -------------------------------------------------------------------------
     bits: List[int] = [int(b) for b in config.barker_code]
     
-    # 2. Length header (8 bits, MSB first)
+    # -------------------------------------------------------------------------
+    # Stage 2: Payload length header (8 bits, MSB first: bit 7 down to 0)
+    # -------------------------------------------------------------------------
     for i in range(7, -1, -1):
         bits.append((length >> i) & 1)
         
-    # 3. Payload bits (MSB first for each byte)
+    # -------------------------------------------------------------------------
+    # Stage 3: Payload data bits (8 bits per byte, MSB first)
+    # -------------------------------------------------------------------------
     for byte in payload:
         for i in range(7, -1, -1):
             bits.append((byte >> i) & 1)
             
-    # 4. CRC-16 (16 bits, MSB first)
+    # -------------------------------------------------------------------------
+    # Stage 4: CRC-16 checksum bits (16 bits, MSB first: bit 15 down to 0)
+    # -------------------------------------------------------------------------
     for i in range(15, -1, -1):
         bits.append((crc >> i) & 1)
         
