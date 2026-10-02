@@ -8,12 +8,22 @@ import argparse
 import time
 import os
 import sys
+
+# Ensure script dir and root are in sys.path
+script_dir = os.path.dirname(os.path.abspath(__file__))
+if script_dir not in sys.path:
+    sys.path.insert(0, script_dir)
+
 import numpy as np
 import soundfile as sf
 import sounddevice as sd
 
 
 def play_soundtrack(file_path: str = "sonicwave_music_hello.wav", loop: bool = False, loop_delay: float = 2.0):
+    if not os.path.isabs(file_path):
+        if not os.path.exists(file_path) and os.path.exists(os.path.join(script_dir, file_path)):
+            file_path = os.path.join(script_dir, file_path)
+
     if not os.path.exists(file_path):
         print(f"[!] Error: Soundtrack file '{file_path}' not found.")
         print("    Please run 'python generate_soundtrack.py' first.")

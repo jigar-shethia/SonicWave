@@ -6,8 +6,14 @@ and exports diagnostic spectrum plots.
 """
 
 import argparse
-import sys
 import os
+import sys
+
+# Ensure script dir and root are in sys.path
+script_dir = os.path.dirname(os.path.abspath(__file__))
+if script_dir not in sys.path:
+    sys.path.insert(0, script_dir)
+
 import numpy as np
 import soundfile as sf
 import matplotlib.pyplot as plt
@@ -26,6 +32,8 @@ def generate_soundtrack(
     offset_sec: float = 1.0,
     plot_spectrum: bool = True,
 ):
+    if not os.path.isabs(output_file):
+        output_file = os.path.join(script_dir, output_file)
     print("=" * 65)
     print("           SONICWAVE SOUNDTRACK GENERATOR")
     print("=" * 65)

@@ -6,9 +6,16 @@ and decodes the payload, printing 'HELLO' in the console.
 """
 
 import argparse
+import os
 import sys
 import time
 import datetime
+
+# Ensure script dir and root are in sys.path
+script_dir = os.path.dirname(os.path.abspath(__file__))
+if script_dir not in sys.path:
+    sys.path.insert(0, script_dir)
+
 import numpy as np
 import sounddevice as sd
 

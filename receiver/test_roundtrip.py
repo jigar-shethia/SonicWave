@@ -5,7 +5,14 @@ Tests reading 'sonicwave_music_hello.wav', feeding it in chunks through StreamRe
 and validating that 'HELLO' is decoded with 100% accuracy.
 """
 
+import os
 import sys
+
+# Ensure script dir and root are in sys.path
+script_dir = os.path.dirname(os.path.abspath(__file__))
+if script_dir not in sys.path:
+    sys.path.insert(0, script_dir)
+
 import numpy as np
 import soundfile as sf
 from sonicwave.config import SonicConfig, ProfileType
@@ -13,6 +20,17 @@ from sonicwave.demodulation import StreamReceiver
 
 
 def test_file_roundtrip(wav_file="sonicwave_music_hello.wav"):
+    if not os.path.exists(wav_file):
+        candidates = [
+            os.path.join(script_dir, wav_file),
+            os.path.join(script_dir, "..", "transmitter", wav_file),
+            os.path.join(script_dir, "transmitter", wav_file),
+        ]
+        for c in candidates:
+            if os.path.exists(c):
+                wav_file = c
+                break
+
     print("=" * 65)
     print("      SONICWAVE END-TO-END SOUNDTRACK ROUNDTRIP TEST")
     print("=" * 65)

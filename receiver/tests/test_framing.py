@@ -1,4 +1,15 @@
 import unittest
+import os
+import sys
+
+# Ensure receiver and root are in sys.path
+test_dir = os.path.dirname(os.path.abspath(__file__))
+receiver_dir = os.path.abspath(os.path.join(test_dir, '..'))
+root_dir = os.path.abspath(os.path.join(receiver_dir, '..'))
+for d in (receiver_dir, root_dir):
+    if d not in sys.path:
+        sys.path.insert(0, d)
+
 from sonicwave.config import SonicConfig
 from sonicwave.framing import build_frame, parse_frame, crc16_ccitt
 
