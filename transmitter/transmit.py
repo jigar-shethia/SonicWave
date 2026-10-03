@@ -103,9 +103,34 @@ def play_soundtrack(file_path: str = "sonicwave_music_hello.wav", loop: bool = F
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="SonicWave Audio Transmitter")
-    parser.add_argument("--file", type=str, default="sonicwave_music_hello.wav", help="Soundtrack WAV file to play")
-    parser.add_argument("--loop", action="store_true", help="Loop playback continuously")
-    parser.add_argument("--delay", type=float, default=2.0, help="Delay between loops in seconds")
+    parser.add_argument("--text", "-t", type=str, default=None, help="Text to modulate and transmit immediately")
+    parser.add_argument("--file", "-f", type=str, default=None, help="Soundtrack WAV file to play")
+    parser.add_argument("--interactive", "-i", action="store_true", help="Launch interactive prompt REPL")
+    parser.add_argument("--web", "-w", action="store_true", help="Launch web dashboard interface")
+    parser.add_argument("--loop", "-l", action="store_true", help="Loop playback continuously")
+    parser.add_argument("--delay", "-d", type=float, default=2.0, help="Delay between loops in seconds")
     args = parser.parse_args()
     
-    play_soundtrack(file_path=args.file, loop=args.loop, loop_delay=args.delay)
+    if args.web:
+        from web_app import start_server
+        start_server()
+    elif args.interactive:
+        from interactive import run_repl
+        run_repl()
+    elif args.text is not None:
+        from interactive import InteractiveTransmitter
+        tx = InteractiveTransmitter()
+        tx.transmit_text(args.text, loop=args.loop, delay_sec=args.delay)
+    else:
+        # Default: if a file was specified or default file exists, play it. Otherwise run interactive mode!
+        target_file = args.file or "sonicwave_music_hello.wav"
+        resolved = target_file
+        if not os.path.isabs(resolved):
+            resolved = os.path.join(script_dir, target_file)
+            
+        if os.path.exists(resolved):
+            play_soundtrack(file_path=target_file, loop=args.loop, loop_delay=args.delay)
+        else:
+            print("[*] No soundtrack found. Starting interactive mode...")
+            from interactive import run_repl
+            run_repl()

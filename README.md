@@ -7,10 +7,11 @@ SonicWave enables near-ultrasonic, acoustic data transmission over standard audi
 The project is structured into two dedicated directories:
 
 ### 1. `transmitter/` (Mac / Audio Generation & Playback)
-- **`generate_soundtrack.py`**: Generates composite soundtrack WAV files mixing ambient music and ultrasonic data bursts.
-- **`transmit.py`**: Streams generated soundtracks through MacBook Pro or external speakers.
+- **`web_app.py`**: Modern Web UI Dashboard for one-click browser-based transmission.
+- **`interactive.py`**: Interactive terminal prompt REPL for conversational typing.
+- **`transmit.py`**: Multi-mode audio transmitter (supports `--text`, `--interactive`, `--web`, `--loop`).
+- **`generate_soundtrack.py`**: Standalone soundtrack generator mixing music and ultrasonic data bursts.
 - **`sonicwave/`**: Transmitter DSP engine (FSK modulation, chirp synthesis, ambient chord generator, soft-knee mixer).
-- **`sonicwave_music_hello.wav`**: Pre-generated audio ready to play.
 - **`SPEAKER_STORIES.md`**: Specification and requirements for speaker transmission.
 
 ### 2. `receiver/` (iOS Native App & Desktop Listener)
@@ -23,15 +24,41 @@ The project is structured into two dedicated directories:
 
 ---
 
-## Quick Start
+## Quick Start: Easy Transmitter Interfaces
 
-### Transmitter
+You can choose whichever transmission interface fits your preference:
+
+### Option A: Modern Web Dashboard (Recommended) 🌐
+Launch the visual web interface with one-click presets and live status:
 ```bash
-# 1. Generate soundtrack with custom text
-python transmitter/generate_soundtrack.py --payload "Hello world"
+python transmitter/web_app.py
+# or
+python transmitter/transmit.py --web
+```
+*(Automatically opens `http://127.0.0.1:5005` in your browser. Type your message and hit **⌘+Enter** to broadcast!)*
 
-# 2. Transmit through speakers
-python transmitter/transmit.py
+### Option B: Interactive Terminal Prompt 💬
+Type messages conversationally straight from your shell:
+```bash
+python transmitter/interactive.py
+# or
+python transmitter/transmit.py --interactive
+```
+```
+SonicWave TX > Hello
+[▶] Transmitting "Hello" (5 bytes, 19.2 kHz)... [COMPLETE]
+
+SonicWave TX > Jigar
+[▶] Transmitting "Jigar" (5 bytes, 19.2 kHz)... [COMPLETE]
+```
+
+### Option C: Instant One-Liner CLI ⚡
+Transmit arbitrary text on the fly without separate generation steps:
+```bash
+python transmitter/transmit.py --text "Hello world"
+
+# Continuous loop transmission:
+python transmitter/transmit.py --text "Jigar" --loop --delay 3.0
 ```
 
 ### Receiver
