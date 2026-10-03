@@ -20,6 +20,20 @@ from sonicwave.demodulation import StreamReceiver
 
 
 def test_file_roundtrip(wav_file="sonicwave_music_hello.wav"):
+    """
+    Automated verification harness for the complete SonicWave receiver pipeline.
+    
+    1. Loads an encoded composite audio file containing embedded ultrasonic data.
+    2. Slices the audio into small 50 ms chunks to accurately simulate real-time microphone input.
+    3. Streams blocks sequentially through StreamReceiver (IIR filter, matched filter, Barker sync, CPFSK demod, CRC).
+    4. Asserts that the decoded payload matches expected text and reports measured SNR.
+
+    Args:
+        wav_file: Filename or path to the input soundtrack WAV.
+
+    Returns:
+        True if at least one packet decoded with CRC PASS, False otherwise.
+    """
     if not os.path.exists(wav_file):
         candidates = [
             os.path.join(script_dir, wav_file),

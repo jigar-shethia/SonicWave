@@ -28,11 +28,14 @@ public final class SonicWaveAudioEngine: ObservableObject {
     private let dspCore = SonicWaveDSPCore()
     private var isEngineRunning = false
     
+    /// Initializes the audio engine and registers callbacks with the DSP core.
     public init() {
         setupDSPCallbacks()
         addLog("SonicWaveAudioEngine initialized.")
     }
     
+    /// Appends a timestamped log entry to the UI log history and stdout console.
+    /// Caps log history at 150 items to manage memory on iOS devices.
     public func addLog(_ message: String) {
         let timestamp = DateFormatter.localizedString(from: Date(), dateStyle: .none, timeStyle: .medium)
         let formatted = "[\(timestamp)] \(message)"
@@ -46,6 +49,8 @@ public final class SonicWaveAudioEngine: ObservableObject {
         }
     }
     
+    /// Connects DSP core output events (RMS levels, decoded packets, debug logs)
+    /// to observable Published SwiftUI state variables.
     private func setupDSPCallbacks() {
         dspCore.onLevelUpdate = { [weak self] levelDB in
             self?.ultrasonicLevelDB = levelDB
@@ -64,6 +69,7 @@ public final class SonicWaveAudioEngine: ObservableObject {
     }
     
     // MARK: - Permissions & Start/Stop Controls
+    /// Toggles the microphone listener between active (listening) and stopped (idle).
     public func toggleListening() {
         if isListening {
             stopListening()
@@ -72,6 +78,7 @@ public final class SonicWaveAudioEngine: ObservableObject {
         }
     }
     
+    /// Inspects and requests iOS microphone record authorization before activating the engine.
     private func requestPermissionAndStart() {
         let session = AVAudioSession.sharedInstance()
         addLog("Checking microphone record permission (Current: \(session.recordPermission.rawValue))...")
@@ -103,6 +110,12 @@ public final class SonicWaveAudioEngine: ObservableObject {
         }
     }
     
+    /// Configures the shared AVAudioSession and starts the real-time audio pipeline:
+    /// - Category: `.playAndRecord` with `.measurement` mode to disable automatic gain control (AGC)
+    ///   and non-linear speech preprocessing filters.
+    /// - Preferred Sample Rate: 48 kHz.
+    /// - Installs a real-time tap on bus 0 of `audioEngine.inputNode`.
+    /// - Pipes PCM buffers directly into `dspCore.processAudioBuffer`.
     public func startAudioStream() {
         guard !isEngineRunning else { return }
         
@@ -161,6 +174,7 @@ public final class SonicWaveAudioEngine: ObservableObject {
         }
     }
     
+    /// Stops the audio engine, tears down the input tap, and releases AVAudioSession.
     public func stopListening() {
         guard isEngineRunning else { return }
         addLog("Stopping audio engine...")
@@ -181,17 +195,20 @@ public final class SonicWaveAudioEngine: ObservableObject {
         addLog("Audio engine stopped. Microphone idle.")
     }
     
+    /// Copies all active debug log messages to the iOS system clipboard.
     public func copyLogsToClipboard() {
         let allLogs = logs.joined(separator: "\n")
         UIPasteboard.general.string = allLogs
         addLog("Copied \(logs.count) log lines to clipboard.")
     }
     
+    /// Clears the debug log message buffer.
     public func clearLogs() {
         logs.removeAll()
         addLog("Logs cleared.")
     }
     
+    /// Clears decoded message history and resets the latest message card.
     public func clearHistory() {
         messageHistory.removeAll()
         latestMessage = nil

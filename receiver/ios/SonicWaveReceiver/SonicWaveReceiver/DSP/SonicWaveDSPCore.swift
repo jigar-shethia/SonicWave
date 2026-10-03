@@ -50,6 +50,7 @@ public final class SonicWaveDSPCore {
     public var onLevelUpdate: ((Float) -> Void)?
     public var onLog: ((String) -> Void)?
     
+    /// Initializes DSP buffers, generates reference chirp and quadrature basis vectors for 48 kHz.
     public init() {
         self.samplesPerSymbol = Int(sampleRate * symbolDurationSec) // 960
         self.chirpLength = Int(sampleRate * chirpDurationSec)       // 2880
@@ -60,6 +61,8 @@ public final class SonicWaveDSPCore {
         setupQuadratureTones()
     }
     
+    /// Dynamically adapts the DSP engine to hardware sample rate changes (e.g. 44.1k or 48k).
+    /// Re-allocates circular buffer and recalculates all reference waveforms.
     public func updateSampleRate(_ newFs: Double) {
         guard newFs > 0 && newFs != sampleRate else { return }
         sampleRate = newFs
@@ -72,6 +75,7 @@ public final class SonicWaveDSPCore {
         log("DSP sample rate updated to \(newFs) Hz")
     }
     
+    /// Formats and dispatches diagnostic log messages to console and subscriber UI.
     private func log(_ message: String) {
         let timestamp = DateFormatter.localizedString(from: Date(), dateStyle: .none, timeStyle: .medium)
         let logMsg = "[\(timestamp)] \(message)"
@@ -81,6 +85,8 @@ public final class SonicWaveDSPCore {
         }
     }
     
+    /// Precomputes the 60 ms reference linear frequency modulated (LFM) up-chirp (18.5k - 19.9k)
+    /// with a 5 ms Hann edge taper and calculates its total reference energy for normalization.
     private func setupReferenceChirp() {
         refChirp = [Float](repeating: 0.0, count: chirpLength)
         let twoPi = 2.0 * Double.pi
@@ -107,6 +113,7 @@ public final class SonicWaveDSPCore {
         refChirpEnergy = refChirp.reduce(0.0) { $0 + ($1 * $1) }
     }
     
+    /// Precomputes quadrature cosine and sine basis arrays for Tone 0 (18.8 kHz) and Tone 1 (19.6 kHz).
     private func setupQuadratureTones() {
         cos0 = [Float](repeating: 0.0, count: samplesPerSymbol)
         sin0 = [Float](repeating: 0.0, count: samplesPerSymbol)
@@ -124,6 +131,8 @@ public final class SonicWaveDSPCore {
     }
     
     // MARK: - Bandpass Filtering (18.5 kHz - 20.0 kHz)
+    /// Direct Form II Transposed Second-Order Section (Biquad) IIR Bandpass Filter.
+    /// Isolates the 18.5 kHz - 20.0 kHz ultrasonic channel while attenuating audible room sound.
     private func bandpassFilter(_ input: [Float]) -> [Float] {
         var output = [Float](repeating: 0.0, count: input.count)
         var w1 = biquadState[0]
@@ -143,6 +152,11 @@ public final class SonicWaveDSPCore {
     }
     
     // MARK: - Process Incoming Audio Buffer
+    /// Ingests a new buffer of raw PCM audio samples from the microphone tap:
+    /// 1. Passes input through the 18.5k - 20k Biquad bandpass filter.
+    /// 2. Computes root-mean-square (RMS) energy in dBFS using Apple Accelerate `vDSP_rmsqv`.
+    /// 3. Updates the 10.0s circular sliding buffer.
+    /// 4. Triggers matched-filter chirp search and dynamic packet decoding over recent 9.0s window.
     public func processAudioBuffer(_ rawSamples: [Float]) {
         guard !rawSamples.isEmpty else { return }
         
@@ -172,6 +186,12 @@ public final class SonicWaveDSPCore {
     }
     
     // MARK: - Matched Filter & Demodulation
+    /// Executes cross-correlation against the reference chirp using Apple Accelerate `vDSP_conv`.
+    /// Upon finding a peak exceeding `correlationThreshold`:
+    /// - Checks 13-bit Barker synchronization code (<= 3 bit errors tolerated).
+    /// - Extracts 8-bit packet length header (1..64 bytes).
+    /// - Ensures all audio symbols for the full payload + CRC have arrived before demodulation.
+    /// - Debounces duplicate triggers within a 1.5s window.
     private func detectAndDecode(in searchWindow: [Float], currentRMSDB: Float) {
         guard searchWindow.count >= chirpLength + (barkerCode.count + 8) * samplesPerSymbol else { return }
         
@@ -247,6 +267,14 @@ public final class SonicWaveDSPCore {
         }
     }
     
+    /// Demodulates FSK symbols into binary bits using non-coherent quadrature tone energy integration.
+    /// Uses Apple Accelerate `vDSP_dotpr` for SIMD vectorized dot products on 80% center slices.
+    ///
+    /// - Parameters:
+    ///   - audio: Filtered audio slice.
+    ///   - startIdx: First symbol start sample index.
+    ///   - bitCount: Number of sequential symbols to decode.
+    /// - Returns: Tuple of decoded bit array and array of per-symbol SNR values (in dB).
     private func demodulateBits(from audio: [Float], startIdx: Int, bitCount: Int) -> ([Int], [Float]) {
         var bits: [Int] = []
         var snrValues: [Float] = []
@@ -284,6 +312,8 @@ public final class SonicWaveDSPCore {
         return (bits, snrValues)
     }
     
+    /// Reassembles payload bytes, computes and validates CRC-16-CCITT checksum,
+    /// debounces redundant packets, instantiates DecodedMessage, and notifies UI on main thread.
     private func validateAndDispatch(allBits: [Int], length: Int, snrList: [Float], peakIndex: Int) {
         let expectedTotalBits = barkerCode.count + 8 + (length * 8) + 16
         guard allBits.count >= expectedTotalBits else { return }

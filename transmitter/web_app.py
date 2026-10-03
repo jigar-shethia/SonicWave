@@ -629,16 +629,33 @@ class WebHandler(BaseHTTPRequestHandler):
 
 
 def start_server(port: int = 5005, open_browser: bool = True):
-    server = HTTPServer(('127.0.0.1', port), WebHandler)
-    url = f"http://127.0.0.1:{port}"
+    HTTPServer.allow_reuse_address = True
+    server = None
+    target_port = port
+    
+    # Try port 5005, then 5006, 5007 if busy
+    for p in range(target_port, target_port + 5):
+        try:
+            server = HTTPServer(('0.0.0.0', p), WebHandler)
+            target_port = p
+            break
+        except OSError:
+            continue
+            
+    if server is None:
+        print(f"[!] Error: Could not bind to any port in range {port}-{port+4}")
+        sys.exit(1)
+        
+    url = f"http://127.0.0.1:{target_port}"
     print("=" * 65)
     print("           SONICWAVE WEB TRANSMITTER DASHBOARD")
     print("=" * 65)
     print(f"[*] Server listening on: {url}")
+    print(f"[*] Local network access: http://localhost:{target_port}")
     print(f"[*] Audio Device       : {engine.device_name}")
     print(f"[*] Ultrasonic Carrier : {engine.config.carrier_freq:.0f} Hz (silent)")
     print("=" * 65)
-    print("Opening web dashboard in your browser... (Press Ctrl+C to stop)")
+    print("Dashboard is live! Opening browser... (Press Ctrl+C to stop)")
     
     if open_browser:
         threading.Timer(0.8, lambda: webbrowser.open(url)).start()

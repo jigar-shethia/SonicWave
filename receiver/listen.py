@@ -24,6 +24,20 @@ from sonicwave.demodulation import StreamReceiver
 
 
 def on_message_decoded(payload_bytes: bytes, snr_db: float):
+    """
+    Callback triggered whenever a complete packet is successfully demodulated
+    and passes 16-bit CRC validation.
+
+    Prints a formatted reception banner showing:
+    - Current local timestamp (millisecond precision).
+    - Decoded UTF-8 text message.
+    - Measured Signal-to-Noise Ratio (SNR) in dB.
+    - Payload size in bytes.
+
+    Args:
+        payload_bytes: Verified binary payload extracted from packet.
+        snr_db: Average signal-to-noise ratio across all demodulated symbols.
+    """
     timestamp = datetime.datetime.now().strftime("%H:%M:%S.%f")[:-3]
     try:
         decoded_text = payload_bytes.decode('utf-8')
@@ -37,6 +51,19 @@ def on_message_decoded(payload_bytes: bytes, snr_db: float):
 
 
 def run_listener(profile_type: ProfileType = ProfileType.UNIVERSAL_48K, device_index=None):
+    """
+    Initializes and runs the live continuous microphone listener loop.
+
+    1. Loads acoustic profile configuration (48 kHz / 96 kHz).
+    2. Instantiates StreamReceiver with bandpass filtering and matched filter.
+    3. Opens a sounddevice InputStream with 50 ms buffer callback blocks.
+    4. Computes real-time ultrasonic band RMS energy and renders an animated ASCII VU meter.
+    5. Gracefully handles Ctrl+C to terminate cleanly without audio driver hangs.
+
+    Args:
+        profile_type: Selected ProfileType (UNIVERSAL_48K or HD_96K).
+        device_index: Optional integer audio input device index (default: system default mic).
+    """
     config = SonicConfig.get_profile(profile_type)
     receiver = StreamReceiver(config, on_payload_decoded=on_message_decoded)
     
